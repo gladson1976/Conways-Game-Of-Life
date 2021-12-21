@@ -1,0 +1,344 @@
+<html>
+	<head>
+	</head>
+	<style>
+		body, select {
+			font-family:Verdana;
+			font-size:8pt;
+		}
+
+		td, th {
+			border-left:1px solid black;
+			border-top:1px solid black;
+			background-color:#E0FFFF;
+			width:10px;
+			height:10px;
+			cursor:hand;
+			line-height:10px;
+			font-family:Verdana;
+			font-size:8pt;
+		}
+		.alive {
+			background-color:#00CCFF !important;
+		}
+		div {
+			border-right:1px solid black;
+			border-bottom:1px solid black;
+			width:400px;
+		}
+		input[type=button] {
+			border: 1px solid black;
+			font-family: Verdana;
+			font-size: 8pt;
+			text-align: center;
+		}
+	</style>
+	
+	<script src="../jquery/jquery-1.9.1.js"></script>
+	<script>
+/*
+Rules:
+1. Any live cell with fewer than two live neighbours dies.
+2. Any live cell with two or three live neighbours lives on to the next generation.
+3. Any live cell with more than three live neighbours dies.
+4. Any dead cell with exactly three live neighbours becomes a live cell.
+*/
+
+// Constants
+// ---------------------------------
+		var DEAD=0;
+		var ALIVE=1;
+		var MIN_NEIGHBOUR=2;
+		var MAX_NEIGHBOUR=3;
+		var SPAWN=3;
+// ---------------------------------
+
+// Globals
+// ---------------------------------
+		var gridSize=40;
+		var limitLower=0;
+		var limitUpper=gridSize-1;
+		var initialCount=200;
+
+		var autoPlayId=null;
+		var lifeCounter=0;
+		var neighbourCount=0;
+
+		var arrGrid=createArray(gridSize, gridSize);
+		var arrGridPlay=createArray(gridSize, gridSize);
+		var arrPatterns=[];
+		arrPatterns[0]="1,1|0,0|0,1|1,0|1,1";
+		arrPatterns[1]="2,3|0,1|0,2|1,0|1,3|2,1|2,2";
+		arrPatterns[2]="3,3|0,1|0,2|1,0|1,3|2,1|2,3|3,2";
+		arrPatterns[3]="2,2|0,0|0,1|1,0|1,2|2,1";
+		arrPatterns[4]="2,1|0,1|1,1|2,1";
+		arrPatterns[5]="3,3|0,2|1,0|1,3|2,0|2,3|3,1";
+		arrPatterns[6]="3,3|0,0|0,1|1,0|1,1|2,2|2,3|3,2|3,3";
+		arrPatterns[7]="14,14|0,4|0,10|1,4|1,10|2,4|2,5|2,9|2,10|4,0|4,1|4,2|4,5|4,6|4,8|4,9|4,12|4,13|4,14|5,2|5,4|5,6|5,8|5,10|5,12|6,4|6,5|6,9|6,10|8,4|8,5|8,9|8,10|9,2|9,4|9,6|9,8|9,10|9,12|10,0|10,1|10,2|10,5|10,6|10,8|10,9|10,12|10,13|10,14|12,4|12,5|12,9|12,10|13,4|13,10|14,4|14,10";
+		arrPatterns[8]="2,2|0,1|1,2|2,0|2,1|2,2";
+		arrPatterns[9]="4,4|1,2|1,3|2,0|2,1|2,3|2,4|3,0|3,1|3,2|3,3|4,1|4,2";
+		arrPatterns[10]="8,35|0,24|1,22|1,24|2,12|2,13|2,20|2,21|2,34|2,35|3,11|3,15|3,20|3,21|3,34|3,35|4,0|4,1|4,10|4,16|4,20|4,21|5,0|5,1|5,10|5,14|5,16|5,17|5,22|5,24|6,10|6,16|6,24|7,11|7,15|8,12|8,13";
+		arrPatterns[11]="5,7|0,6|1,4|1,6|1,7|2,4|2,6|3,4|4,2|5,0|5,2";
+		arrPatterns[12]="4,4|0,0|0,1|0,2|0,4|1,0|2,3|2,4|3,1|3,2|3,4|4,0|4,2|4,4";
+		arrPatterns[13]="1,38|1,0|1,1|1,2|1,3|1,4|1,5|1,6|1,7|1,9|1,10|1,11|1,12|1,13|1,17|1,18|1,19|1,26|1,27|1,28|1,29|1,30|1,31|1,32|1,34|1,35|1,36|1,37|1,38";
+		arrPatterns[14]="2,2|0,1|0,2|1,0|1,1|2,1";
+		arrPatterns[15]="2,7|0,6|1,0|1,1|2,1|2,5|2,6|2,7";
+		arrPatterns[16]="2,6|0,1|1,3|2,0|2,1|2,4|2,5|2,6";
+		arrPatterns[17]="8,8|0,2|0,3|0,4|0,5|0,6|1,1|1,7|2,1|2,7|3,0|3,2|3,6|3,8|4,0|4,4|4,8|5,1|5,7|6,1|6,3|6,4|6,5|6,7|7,2|7,6|8,3|8,4|8,5";
+// ---------------------------------
+
+// Global Functions
+// ---------------------------------
+		function createArray(arrLength){
+			var arrTemp=new Array(arrLength||0);
+			if(arguments.length>1){
+				var argsList=Array.prototype.slice.call(arguments, 1);
+				for(var i=0; i<arrLength; i++){
+					arrTemp[i]=createArray.apply(this, argsList);
+				}
+			}
+			return arrTemp;
+		}
+
+		function getRandom(min, max){
+			return Math.floor(Math.random()*(max-min+1))+min;
+		}
+// ---------------------------------
+
+		function resetGrid(resetType){
+			clearInterval(autoPlayId);
+			lifeCounter=0;
+			jQuery("#cmdPlay").val("Play");
+			jQuery("#cmdNext").attr("disabled", false);
+			jQuery("#cmdEditPattern").attr("disabled", true);
+			
+			initGrid();
+			if(resetType==1) populateGrid();
+			drawGrid();
+			attachClicks();
+		}
+
+		function attachClicks(){
+			jQuery("#tblGrid tr td").click(
+				function(){
+					var cellId=jQuery(this).attr("id");
+					var arrCellId=cellId.split("_");
+					if(arrGrid[arrCellId[1]][arrCellId[2]]==DEAD){
+						arrGrid[arrCellId[1]][arrCellId[2]]=ALIVE;
+						jQuery(this).css("background-color", "#00CCFF");
+					}else{
+						arrGrid[arrCellId[1]][arrCellId[2]]=DEAD;
+						jQuery(this).css("background-color", "#E0FFFF");
+					}
+				}
+			);
+		}
+		
+		function initGrid(){
+			lifeCounter=0;
+			for(var i=0; i<gridSize; i++){
+				for(var j=0; j<gridSize; j++){
+					arrGrid[i][j]=0;
+				}
+			}
+		}
+
+		function clearPlayGrid(){
+			for(var i=0; i<gridSize; i++){
+				for(var j=0; j<gridSize; j++){
+					arrGridPlay[i][j]=0;
+				}
+			}
+		}
+		
+		function populateGrid(){
+			var X, Y;
+
+			for(var i=0; i<initialCount; i++){
+				X=getRandom(limitLower, limitUpper);
+				Y=getRandom(limitLower, limitUpper);
+				while(arrGrid[X][Y]==ALIVE){
+					X=getRandom(limitLower, limitUpper);
+					Y=getRandom(limitLower, limitUpper);
+				}
+				arrGrid[X][Y]=ALIVE;
+			}
+		}
+		
+		function drawGrid(){
+			var strTitle="<table id='tblTitle' cellpadding='0' cellspacing='0' width='100%' style='height:15px;'><tr><td>&nbsp;Generations: "+lifeCounter+"</td></tr></table>";
+			var strGrid="<table id='tblGrid' cellpadding='0' cellspacing='0'><tr>";
+			//strGrid+="<td colspan='"+gridSize+"'>&nbsp;Generations: "+lifeCounter+"</td></tr><tr>"
+			for(var i=0; i<gridSize; i++){
+				for(var j=0; j<gridSize; j++){
+					if(arrGrid[i][j]==ALIVE){
+						strGrid+="<td id='tdCell_"+i+"_"+j+"' class='alive'>&nbsp;</td>";
+					}else{
+						strGrid+="<td id='tdCell_"+i+"_"+j+"'>&nbsp;</td>";
+					}
+				}
+				strGrid+="</tr>";
+				if(i != limitUpper) strGrid+="<tr>";
+			}
+			strGrid+="</table>";
+			jQuery("#spanTitle").html(strTitle);
+			jQuery("#divGrid").html(strGrid);
+		}
+
+		function nextGeneration(){
+			clearPlayGrid();
+			for(var i=0; i<gridSize; i++){
+				for(var j=0; j<gridSize; j++){
+					neighbourCount=findNeighbours(i, j);
+					if(arrGrid[i][j]!=DEAD){
+						if(neighbourCount>=MIN_NEIGHBOUR && neighbourCount<=MAX_NEIGHBOUR) arrGridPlay[i][j]=ALIVE;
+					}else{
+						if(neighbourCount==SPAWN) arrGridPlay[i][j]=ALIVE;
+					}
+				}
+			}
+			copyGrid(arrGridPlay, arrGrid);
+			lifeCounter++;
+			drawGrid();
+			if(checkAnyAlive()){
+				if(autoPlayId) clearInterval(autoPlayId);
+				jQuery("#cmdPlay").val("Play");
+				jQuery("#cmdNext").attr("disabled", false);
+				jQuery("#cmdEditPattern").attr("disabled", true);
+			}
+		}
+		
+		function autoPlay(){
+			var S=jQuery("#selSpeed").val();
+			if(jQuery("#cmdPlay").val()=="Play"){
+				jQuery("#cmdPlay").val("Pause");
+				jQuery("#cmdNext").attr("disabled", true);
+				jQuery("#cmdEditPattern").attr("disabled", true);
+				autoPlayId=setInterval(nextGeneration, S);
+			}else{
+				jQuery("#cmdPlay").val("Play");
+				jQuery("#cmdNext").attr("disabled", false);
+				jQuery("#cmdEditPattern").attr("disabled", false);
+				clearInterval(autoPlayId);
+			}
+		}
+
+		function setPattern(){
+			resetGrid(0);
+			var patternId=jQuery("#selPattern").val();
+			var strPattern=arrPatterns[patternId];
+			arrP=strPattern.split("|");
+			var strMax=arrP[0];
+			var maxX=strMax.split(",")[0];
+			var maxY=strMax.split(",")[1];
+			var devX=Math.floor((gridSize-maxX)/2)-1;
+			var devY=Math.floor((gridSize-maxY)/2)-1;
+
+			for(var i=1;i<arrP.length;i++){
+				arrXY=arrP[i].split(",");
+				arrGrid[parseInt(arrXY[0])+parseInt(devX)][parseInt(arrXY[1])+parseInt(devY)]=ALIVE;
+			}
+			jQuery("#cmdEditPattern").attr("disabled", false);
+			drawGrid();
+		}
+
+		function editPattern(){
+			attachClicks();
+		}
+
+		function setSpeed(){
+			var S=jQuery("#selSpeed").val();
+			clearInterval(autoPlayId);
+			autoPlayId=setInterval(nextGeneration, S);
+		}
+
+		function findNeighbours(X, Y){
+			var C=(arrGrid[X][Y]!=0)?-1:0;
+			for(var i=-1;i<=1;i++){
+				for(var j=-1;j<=1;j++){
+					if(arrGrid[(gridSize+(i+X))%gridSize][(gridSize+(j+Y))%gridSize]!=DEAD){
+						C++;
+					}
+				}
+			}
+			return(C);
+		}
+		
+		function checkAnyAlive(){
+			var allDead=true;
+			for(var i=0; i<gridSize; i++){
+				for(var j=0; j<gridSize; j++){
+					if(arrGrid[i][j]==ALIVE){
+						allDead=false;
+						break;
+					}
+				}
+			}
+			return(allDead);
+		}
+
+		function copyGrid(sourceGrid, destinationGrid){
+			for(var i=0; i<gridSize; i++){
+				destinationGrid[i]=sourceGrid[i].slice(0);
+			}
+		}
+
+
+// jQuery init
+// ---------------------------------
+		jQuery(function(){
+			resetGrid();
+		})
+// ---------------------------------
+	</script>
+	<body>
+		<div id="spanTitle"></div>
+		<div id="divGrid"></div><br />
+		<input type="button" id="cmdPlay" value="Play" onclick="Javascript:autoPlay()">
+		<input type="button" id="cmdNext" value="Next" onclick="Javascript:nextGeneration()">
+		<input type="button" id="cmdClear" value="Clear" onclick="Javascript:resetGrid(0)">
+		<input type="button" id="cmdRandomize" value="Random Seed" onclick="Javascript:resetGrid(1)"><br /><br />
+		Patterns:
+		<select id="selPattern">
+			<optgroup label="Still Life">
+				<option value='0'>Block</option>
+				<option value='1'>Beehive</option>
+				<option value='2'>Loaf</option>
+				<option value='3'>Boat</option>
+			</optgroup>
+			<optgroup label="Oscillators">
+				<option value='4'>Blinker</option>
+				<option value='5'>Toad</option>
+				<option value='6'>Beacon</option>
+				<option value='7'>Pulsar</option>
+			</optgroup>
+			<optgroup label="Gliders">
+				<option value='8'>Glider</option>
+				<option value='9'>Spaceship</option>
+			</optgroup>
+			<optgroup label="Infinite">
+				<option value='10'>Gosper Glider Gun</option>
+				<option value='11'>Infinite 1</option>
+				<option value='12'>Infinite 2</option>
+				<option value='13'>Infinite 3</option>
+			</optgroup>
+			<optgroup label="Others">
+				<option value='14'>F-Pentomino</option>
+				<option value='15'>Die hard</option>
+				<option value='16'>Acorn</option>
+				<option value='17'>Face</option>
+			</optgroup>
+		</select>
+		<input type="button" id="cmdSetPattern" value="Set Pattern" onclick="Javascript:setPattern()">
+		<input type="button" id="cmdEditPattern" value="Edit Pattern" onclick="Javascript:editPattern()"><br /><br />
+		Speed:
+		<select id="selSpeed">
+			<option value="50">Faster</option>
+			<option value="100">Fast</option>
+			<option value="250" selected>Normal</option>
+			<option value="500">Slow</option>
+			<option value="1000">Slower</option>
+		</select>
+		<input type="button" id="cmdSetSpeed" value="Set Speed" onclick="Javascript:setSpeed()">
+	</body>
+</html>
